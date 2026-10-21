@@ -1,0 +1,115 @@
+blueprint:
+  name: Griffin PowerMate actions
+  description: Run any action for each PowerMate knob gesture. Leave a gesture empty to ignore it.
+  domain: automation
+  source_url: https://github.com/prokrypt/ha-griffin-powermate/blob/main/blueprints/automation/griffin_powermate/powermate_actions.yaml
+  input:
+    knob:
+      name: PowerMate
+      selector:
+        entity:
+          filter:
+            - integration: griffin_powermate
+              domain: event
+    cw:
+      name: Turn clockwise
+      default: []
+      selector:
+        action: {}
+    ccw:
+      name: Turn counter-clockwise
+      default: []
+      selector:
+        action: {}
+    press:
+      name: Press
+      default: []
+      selector:
+        action: {}
+    release:
+      name: Release
+      default: []
+      selector:
+        action: {}
+    press_cw:
+      name: Pressed + turn clockwise
+      default: []
+      selector:
+        action: {}
+    press_ccw:
+      name: Pressed + turn counter-clockwise
+      default: []
+      selector:
+        action: {}
+    hold_1:
+      name: Hold, step 1
+      default: []
+      selector:
+        action: {}
+    hold_2:
+      name: Hold, step 2
+      default: []
+      selector:
+        action: {}
+    hold_3:
+      name: Hold, step 3
+      default: []
+      selector:
+        action: {}
+    hold_4:
+      name: Hold, step 4
+      default: []
+      selector:
+        action: {}
+    hold_5:
+      name: Hold, step 5
+      default: []
+      selector:
+        action: {}
+    hold_6:
+      name: Hold, step 6
+      default: []
+      selector:
+        action: {}
+
+mode: queued
+max: 20
+max_exceeded: silent
+
+trigger:
+  - platform: state
+    entity_id: !input knob
+    not_to: unavailable
+
+# skip the restored state written at startup/reload
+condition:
+  - "{{ trigger.from_state is not none and trigger.from_state.state != 'unavailable' }}"
+
+action:
+  - variables:
+      gesture: "{{ trigger.to_state.attributes.event_type }}"
+  - choose:
+      - conditions: "{{ gesture == 'cw' }}"
+        sequence: !input cw
+      - conditions: "{{ gesture == 'ccw' }}"
+        sequence: !input ccw
+      - conditions: "{{ gesture == 'press' }}"
+        sequence: !input press
+      - conditions: "{{ gesture == 'release' }}"
+        sequence: !input release
+      - conditions: "{{ gesture == 'press_cw' }}"
+        sequence: !input press_cw
+      - conditions: "{{ gesture == 'press_ccw' }}"
+        sequence: !input press_ccw
+      - conditions: "{{ gesture == 'hold_1' }}"
+        sequence: !input hold_1
+      - conditions: "{{ gesture == 'hold_2' }}"
+        sequence: !input hold_2
+      - conditions: "{{ gesture == 'hold_3' }}"
+        sequence: !input hold_3
+      - conditions: "{{ gesture == 'hold_4' }}"
+        sequence: !input hold_4
+      - conditions: "{{ gesture == 'hold_5' }}"
+        sequence: !input hold_5
+      - conditions: "{{ gesture == 'hold_6' }}"
+        sequence: !input hold_6

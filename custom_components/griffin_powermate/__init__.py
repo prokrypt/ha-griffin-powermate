@@ -6,21 +6,24 @@ from bleak.exc import BleakError
 from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
 from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_ADDRESS
+from homeassistant.const import CONF_ADDRESS, Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 
-from .const import ACTIONS, EVENT, UUID_LED, UUID_READ, is_duplicate
+from .const import ACTIONS, DOMAIN, EVENT, UUID_LED, UUID_READ, is_duplicate
 
 _LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    entry.async_create_background_task(hass, _run(hass, entry.data[CONF_ADDRESS]), "griffin_powermate")
+    await hass.config_entries.async_forward_entry_setups(entry, [Platform.EVENT])
+    entry.async_create_background_task(hass, _run(hass, entry.data[CONF_ADDRESS]), DOMAIN)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    return True  # background task is cancelled by HA on unload
+    # background task is cancelled by HA on unload
+    return await hass.config_entries.async_unload_platforms(entry, [Platform.EVENT])
 
 
 async def _run(hass: HomeAssistant, address: str) -> None:
@@ -30,8 +33,12 @@ async def _run(hass: HomeAssistant, address: str) -> None:
         code, now = data[0], time.monotonic()
         dup = is_duplicate(code, last[0], now - last[1])
         last[:] = [code, now]
-        if not dup:
-            hass.bus.async_fire(EVENT, {"address": address, "action": ACTIONS.get(code, f"0x{code:02x}")})
+        if dup:
+            return
+        action = ACTIONS.get(code)
+        hass.bus.async_fire(EVENT, {"address": address, "action": action or f"0x{code:02x}"})
+        if action:
+            async_dispatcher_send(hass, f"{DOMAIN}_{address}", action)
 
     # shortcut: blind reconnect loop like the expect script; upgrade to an advertisement callback if it drains battery
     while True:
