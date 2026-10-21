@@ -24,6 +24,8 @@ Import the blueprint, create an automation from it, pick your PowerMate, and set
 Each knob action also fires a `griffin_powermate_event` with `address` and `action`:
 `press`, `release`, `cw`, `ccw`, `press_cw`, `press_ccw`, `hold_1` … `hold_6`.
 
+Letting go after a press-turn can make the knob send a stray `press`, `cw` or `ccw`, so those are dropped for 1s after each `press_cw`/`press_ccw` step.
+
 ```yaml
 automation:
   - trigger:
