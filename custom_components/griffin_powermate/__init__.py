@@ -18,10 +18,12 @@ from .const import (
     DOMAIN,
     EVENT,
     LED_OFF,
+    PRESS_TURN,
     UUID_BATTERY,
     UUID_LED,
     UUID_READ,
     is_duplicate,
+    is_press_turn_tail,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -42,6 +44,7 @@ class PowerMate:
         self.led = LED_OFF
         self.battery = None
         self._last = (None, 0.0)
+        self._press_turn = float("-inf")
         self._heard = asyncio.Event()
 
     async def set_led(self, value: int) -> None:
@@ -56,9 +59,12 @@ class PowerMate:
         if not data:
             return
         code, now = data[0], time.monotonic()
-        dup = is_duplicate(code, self._last[0], now - self._last[1])
+        dup = is_duplicate(code, self._last[0], now - self._last[1]) or is_press_turn_tail(code, now - self._press_turn)
         self._last = (code, now)
+        if code in PRESS_TURN:
+            self._press_turn = now
         if dup:
+            _LOGGER.debug("PowerMate %s: dropped 0x%02x", self.address, code)
             return
         action = ACTIONS.get(code)
         self.hass.bus.async_fire(EVENT, {"address": self.address, "action": action or f"0x{code:02x}"})
