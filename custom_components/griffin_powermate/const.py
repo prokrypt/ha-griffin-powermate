@@ -23,3 +23,19 @@ DEBOUNCE = 1.0
 
 def is_duplicate(code, last_code, elapsed):
     return code in (0x65, 0x66) and code == last_code and elapsed < DEBOUNCE
+
+
+UUID_BATTERY = "00002a19-0000-1000-8000-00805f9b34fb"
+BATTERY_INTERVAL = 600  # seconds between battery reads while connected
+
+# LED byte: 80 off, A1..BF dim..bright, C0..FF blink at different speeds
+LED_OFF = 0x80
+EFFECTS = {"blink_1": 0xC0, "blink_2": 0xD0, "blink_3": 0xE0, "blink_4": 0xF0}
+
+
+def led_byte(is_on, brightness, effect):
+    if not is_on:
+        return LED_OFF
+    if effect in EFFECTS:
+        return EFFECTS[effect]
+    return 0xA1 + round((max(brightness, 1) - 1) * 30 / 254)

@@ -8,7 +8,10 @@ Install: add this repo as a HACS custom repository, or copy `custom_components/g
 
 Import the blueprint, create an automation from it, pick your PowerMate, and set any action per gesture. One automation per knob, or several for different modes.
 
-The device also has an `event.<name>_knob` entity whose `event_type` is the last gesture; usable in any automation trigger.
+## Entities
+- `event.<name>_knob`: last gesture in `event_type`.
+- `light.<name>_led`: on/off, brightness, effects `blink_1`…`blink_4`. State is restored and re-sent each time the knob reconnects. Drive it from the blueprint actions, e.g. turn it on while the volume changes.
+- `sensor.<name>_battery`: read on connect and every 10 min.
 
 ## Raw events
 Each knob action also fires a `griffin_powermate_event` with `address` and `action`:

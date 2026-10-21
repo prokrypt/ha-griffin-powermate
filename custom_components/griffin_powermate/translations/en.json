@@ -2,12 +2,35 @@
   "config": {
     "flow_title": "{name}",
     "step": {
-      "confirm": { "description": "Set up PowerMate {address}?" },
-      "user": { "data": { "address": "Device" } }
+      "confirm": {
+        "description": "Set up PowerMate {address}?"
+      },
+      "user": {
+        "data": {
+          "address": "Device"
+        }
+      }
     },
     "abort": {
       "already_configured": "Already configured",
       "no_devices_found": "No PowerMate found. Turn the knob to wake it and retry."
+    }
+  },
+  "entity": {
+    "light": {
+      "led": {
+        "state_attributes": {
+          "effect": {
+            "state": {
+              "off": "None",
+              "blink_1": "Blink 1",
+              "blink_2": "Blink 2",
+              "blink_3": "Blink 3",
+              "blink_4": "Blink 4"
+            }
+          }
+        }
+      }
     }
   }
 }
