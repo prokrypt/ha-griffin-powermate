@@ -1,0 +1,43 @@
+name: Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    name: pytest (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The minimum Home Assistant version in hacs.json. josepy 2 breaks the acme
+          # library that this Home Assistant release imports.
+          - name: HA 2024.6.0
+            python: "3.12"
+            install: pytest-homeassistant-custom-component==0.13.132 "josepy<2"
+          - name: HA from requirements_test.txt
+            python: "3.14"
+            install: -r requirements_test.txt
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install Home Assistant test harness
+        run: pip install ${{ matrix.install }}
+      - name: Install libraries of the integrations griffin_powermate depends on
+        run: |
+          python script/ha_requirements.py > "$RUNNER_TEMP/ha_requirements.txt"
+          pip install -r "$RUNNER_TEMP/ha_requirements.txt" -c "$(python script/ha_requirements.py --constraints)"
+      - name: Run tests
+        run: pytest
