@@ -1,12 +1,15 @@
 {
   "domain": "griffin_powermate",
   "name": "Griffin PowerMate Bluetooth",
-  "bluetooth": [{ "local_name": "PowerMate Bluetooth", "connectable": true }],
+  "bluetooth": [
+    { "local_name": "PowerMate Bluetooth", "connectable": true },
+    { "service_uuid": "25598cf7-4240-40a6-9910-080f19f91ebc", "connectable": true }
+  ],
   "codeowners": ["@prokrypt"],
   "config_flow": true,
   "dependencies": ["bluetooth_adapters"],
   "documentation": "https://github.com/prokrypt/ha-griffin-powermate",
   "iot_class": "local_push",
   "requirements": [],
-  "version": "0.2.0"
+  "version": "0.3.0"
 }

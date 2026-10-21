@@ -1,5 +1,8 @@
 DOMAIN = "griffin_powermate"
 EVENT = "griffin_powermate_event"
+LOCAL_NAME = "PowerMate Bluetooth"
+# matched too, in case HA hears the knob without its name
+UUID_SERVICE = "25598cf7-4240-40a6-9910-080f19f91ebc"
 UUID_READ = "9cf53570-ddd9-47f3-ba63-09acefc60415"
 UUID_LED = "847d189e-86ee-4bd2-966f-800832b1259d"
 
