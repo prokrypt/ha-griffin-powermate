@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from bleak.exc import BleakError
@@ -20,6 +21,17 @@ from .conftest import ADDRESS, service_info
 pytestmark = pytest.mark.usefixtures("mock_bluetooth")
 
 CONNECT = "custom_components.griffin_powermate.establish_connection"
+
+
+@pytest.fixture(autouse=True)
+def fast_poll():
+    with patch("custom_components.griffin_powermate.POLL_INTERVAL", 0.01, create=True):
+        yield
+
+
+async def settle() -> None:
+    """Let the connection loop run a few rounds."""
+    await asyncio.sleep(0.1)
 
 
 @pytest.fixture
@@ -63,9 +75,11 @@ async def test_advert_starts_discovery_with_or_without_name(hass: HomeAssistant,
 async def test_connects_when_the_knob_advertises(hass: HomeAssistant, entry, client) -> None:
     with patch(CONNECT, AsyncMock(return_value=client)) as connect:
         await setup(hass, entry)
+        await settle()
         connect.assert_not_called()  # HA has not heard the knob yet
 
         await advertise(hass)
+        await settle()
         connect.assert_awaited_once()
         assert connect.await_args.args[2] == ADDRESS
         client.start_notify.assert_awaited_once()
@@ -82,6 +96,7 @@ async def test_led_write_error_keeps_the_connection(hass: HomeAssistant, entry, 
     with patch(CONNECT, AsyncMock(return_value=client)):
         await setup(hass, entry)
         await advertise(hass)
+        await settle()
         client.read_gatt_char.assert_awaited_once()  # got past the LED write
         client.disconnect.assert_not_called()
 
@@ -93,10 +108,44 @@ async def test_knob_actions_fire_events(hass: HomeAssistant, entry, client) -> N
     with patch(CONNECT, AsyncMock(return_value=client)):
         await setup(hass, entry)
         await advertise(hass)
+        await settle()
         notify = client.start_notify.await_args.args[1]
         notify(None, bytearray())  # empty notification is ignored
         notify(None, bytearray([0x68]))
         await hass.async_block_till_done()
 
         assert [e.data for e in events] == [{"address": ADDRESS, "action": "cw"}]
+        assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_reconnects_when_the_knob_advertises_the_same_data_again(hass: HomeAssistant, entry, client) -> None:
+    """HA skips callbacks for an advert identical to the last one; the knob's never change."""
+    with patch(CONNECT, AsyncMock(return_value=client)) as connect:
+        await setup(hass, entry)
+        await advertise(hass)
+        await settle()
+        assert connect.await_count == 1
+
+        client.is_connected = False
+        connect.await_args.kwargs["disconnected_callback"](client)
+        await settle()
+        assert connect.await_count == 1  # not heard since
+
+        await advertise(hass)  # same data as before
+        await settle()
+        assert connect.await_count == 2
+
+        assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_unexpected_error_does_not_stop_reconnecting(hass: HomeAssistant, entry, client) -> None:
+    with patch(CONNECT, AsyncMock(side_effect=[RuntimeError("boom"), client])) as connect:
+        await setup(hass, entry)
+        await advertise(hass)
+        await settle()
+        await advertise(hass)
+        await settle()
+        assert connect.await_count == 2
+        client.start_notify.assert_awaited_once()
+
         assert await hass.config_entries.async_unload(entry.entry_id)
