@@ -39,6 +39,9 @@ automation:
         target: { entity_id: media_player.living_room }
 ```
 
+## Releases
+Bump `version` in `manifest.json`; merging to main publishes `v<version>` with generated notes.
+
 ## Development
 ```sh
 pip install -r requirements_test.txt

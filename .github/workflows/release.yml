@@ -1,0 +1,28 @@
+name: Release
+
+# Publishes a release for the manifest version when main has one that isn't released yet.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+      - name: Publish release if the version is new
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v$(jq -r .version custom_components/griffin_powermate/manifest.json)"
+          if gh release view "$tag" > /dev/null 2>&1; then
+            echo "$tag already released"
+          else
+            gh release create "$tag" --target "$GITHUB_SHA" --title "$tag" --generate-notes
+          fi
