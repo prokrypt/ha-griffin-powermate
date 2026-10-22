@@ -19,12 +19,16 @@ from .const import (
     EVENT,
     LED_OFF,
     PRESS_TURN,
+    TURN_GAP,
+    TURN_MAX_WAIT,
+    TURNS,
     UUID_BATTERY,
     UUID_LED,
     UUID_READ,
     is_duplicate,
     is_press_turn_tail,
 )
+from .turns import TurnGrouper
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [Platform.EVENT, Platform.LIGHT, Platform.SENSOR]
@@ -46,6 +50,7 @@ class PowerMate:
         self.battery = None
         self._last = (None, 0.0)
         self._press_turn = float("-inf")
+        self._turns = TurnGrouper(hass.loop, TURN_GAP, TURN_MAX_WAIT, self._fire)
 
     async def set_led(self, value: int) -> None:
         self.led = value
@@ -66,10 +71,16 @@ class PowerMate:
         if dup:
             _LOGGER.debug("PowerMate %s: dropped 0x%02x", self.address, code)
             return
-        action = ACTIONS.get(code)
-        self.hass.bus.async_fire(EVENT, {"address": self.address, "action": action or f"0x{code:02x}"})
-        if action:
-            async_dispatcher_send(self.hass, f"{self.signal}_action", action)
+        if code in TURNS:
+            self._turns.add(ACTIONS[code])
+            return
+        self._turns.flush()  # keep pending turns ahead of the button event
+        self._fire(ACTIONS.get(code) or f"0x{code:02x}", 1)
+
+    def _fire(self, action: str, steps: int) -> None:
+        self.hass.bus.async_fire(EVENT, {"address": self.address, "action": action, "steps": steps})
+        if action in ACTIONS.values():
+            async_dispatcher_send(self.hass, f"{self.signal}_action", action, steps)
 
     async def _read_battery(self) -> None:
         try:

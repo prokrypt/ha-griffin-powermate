@@ -88,28 +88,33 @@ condition:
 action:
   - variables:
       gesture: "{{ trigger.to_state.attributes.event_type }}"
-  - choose:
-      - conditions: "{{ gesture == 'cw' }}"
-        sequence: !input cw
-      - conditions: "{{ gesture == 'ccw' }}"
-        sequence: !input ccw
-      - conditions: "{{ gesture == 'press' }}"
-        sequence: !input press
-      - conditions: "{{ gesture == 'release' }}"
-        sequence: !input release
-      - conditions: "{{ gesture == 'press_cw' }}"
-        sequence: !input press_cw
-      - conditions: "{{ gesture == 'press_ccw' }}"
-        sequence: !input press_ccw
-      - conditions: "{{ gesture == 'hold_1' }}"
-        sequence: !input hold_1
-      - conditions: "{{ gesture == 'hold_2' }}"
-        sequence: !input hold_2
-      - conditions: "{{ gesture == 'hold_3' }}"
-        sequence: !input hold_3
-      - conditions: "{{ gesture == 'hold_4' }}"
-        sequence: !input hold_4
-      - conditions: "{{ gesture == 'hold_5' }}"
-        sequence: !input hold_5
-      - conditions: "{{ gesture == 'hold_6' }}"
-        sequence: !input hold_6
+      # fast turns arrive grouped; run the gesture's action once per click
+      steps: "{{ trigger.to_state.attributes.steps | default(1) | int(1) }}"
+  - repeat:
+      count: "{{ steps }}"
+      sequence:
+        - choose:
+          - conditions: "{{ gesture == 'cw' }}"
+            sequence: !input cw
+          - conditions: "{{ gesture == 'ccw' }}"
+            sequence: !input ccw
+          - conditions: "{{ gesture == 'press' }}"
+            sequence: !input press
+          - conditions: "{{ gesture == 'release' }}"
+            sequence: !input release
+          - conditions: "{{ gesture == 'press_cw' }}"
+            sequence: !input press_cw
+          - conditions: "{{ gesture == 'press_ccw' }}"
+            sequence: !input press_ccw
+          - conditions: "{{ gesture == 'hold_1' }}"
+            sequence: !input hold_1
+          - conditions: "{{ gesture == 'hold_2' }}"
+            sequence: !input hold_2
+          - conditions: "{{ gesture == 'hold_3' }}"
+            sequence: !input hold_3
+          - conditions: "{{ gesture == 'hold_4' }}"
+            sequence: !input hold_4
+          - conditions: "{{ gesture == 'hold_5' }}"
+            sequence: !input hold_5
+          - conditions: "{{ gesture == 'hold_6' }}"
+            sequence: !input hold_6

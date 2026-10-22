@@ -25,6 +25,6 @@ class KnobEvent(EventEntity):
         self.async_on_remove(async_dispatcher_connect(self.hass, f"{self._pm.signal}_action", self._on_action))
 
     @callback
-    def _on_action(self, action: str) -> None:
-        self._trigger_event(action)
+    def _on_action(self, action: str, steps: int) -> None:
+        self._trigger_event(action, {"steps": steps})
         self.async_write_ha_state()
