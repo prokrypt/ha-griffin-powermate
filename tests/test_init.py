@@ -114,7 +114,7 @@ async def test_knob_actions_fire_events(hass: HomeAssistant, entry, client) -> N
         notify(None, bytearray([0x68]))
         await hass.async_block_till_done()
 
-        assert [e.data for e in events] == [{"address": ADDRESS, "action": "cw"}]
+        assert [e.data for e in events] == [{"address": ADDRESS, "action": "cw", "steps": 1}]
         assert await hass.config_entries.async_unload(entry.entry_id)
 
 

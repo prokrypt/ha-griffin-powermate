@@ -16,13 +16,15 @@ To add it by hand: Add integration > Griffin PowerMate Bluetooth, then pick the 
 Import the blueprint, create an automation from it, pick your PowerMate, and set any action per gesture. One automation per knob, or several for different modes.
 
 ## Entities
-- `event.<name>_knob`: last gesture in `event_type`.
+- `event.<name>_knob`: last gesture in `event_type`, click count in `steps`.
 - `light.<name>_led`: on/off, brightness, effects `blink_1`…`blink_4`. State is restored and re-sent each time the knob reconnects. Drive it from the blueprint actions, e.g. turn it on while the volume changes.
 - `sensor.<name>_battery`: read on connect and every 10 min.
 
 ## Raw events
-Each knob action also fires a `griffin_powermate_event` with `address` and `action`:
+Each knob action also fires a `griffin_powermate_event` with `address`, `action` and `steps`:
 `press`, `release`, `cw`, `ccw`, `press_cw`, `press_ccw`, `hold_1` … `hold_6`.
+
+A turn click fires at once. Further clicks in the same direction less than 200ms apart are grouped into one event whose `steps` is the click count, sent after 200ms without a click or 500ms at most. A fast spin then makes a few events instead of dozens, so the automation can apply the whole change at once, e.g. `brightness_step_pct: "{{ 2 * trigger.to_state.attributes.steps }}"`. The blueprint runs your action once per click.
 
 Letting go after a press-turn can make the knob send a stray `press`, `cw` or `ccw`, so those are dropped for 1s after each `press_cw`/`press_ccw` step.
 

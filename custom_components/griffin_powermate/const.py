@@ -38,6 +38,11 @@ def is_press_turn_tail(code, elapsed):
     return code in (0x65, 0x67, 0x68) and elapsed <= PRESS_TURN_QUIET
 
 
+# turn clicks closer than TURN_GAP are sent as one event with a step count
+TURNS = (0x67, 0x68, 0x69, 0x70)
+TURN_GAP = 0.2
+TURN_MAX_WAIT = 0.5
+
 UUID_BATTERY = "00002a19-0000-1000-8000-00805f9b34fb"
 BATTERY_INTERVAL = 600  # seconds between battery reads while connected
 
