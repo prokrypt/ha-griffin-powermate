@@ -8,7 +8,7 @@ from bleak_retry_connector import BleakClientWithServiceCache, establish_connect
 from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ADDRESS, Platform
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH, DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
@@ -28,6 +28,7 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [Platform.EVENT, Platform.LIGHT, Platform.SENSOR]
+POLL_INTERVAL = 1  # seconds between checks for a fresh advertisement
 
 
 class PowerMate:
@@ -45,7 +46,6 @@ class PowerMate:
         self.battery = None
         self._last = (None, 0.0)
         self._press_turn = float("-inf")
-        self._heard = asyncio.Event()
 
     async def set_led(self, value: int) -> None:
         self.led = value
@@ -79,22 +79,21 @@ class PowerMate:
             return
         async_dispatcher_send(self.hass, f"{self.signal}_update")
 
-    @callback
-    def on_advertisement(self, _info, _change) -> None:
-        self._heard.set()
-
     async def run(self) -> None:
-        # an idle knob advertises in short bursts minutes apart, so only try to connect right after hearing one
+        # an idle knob advertises in short bursts minutes apart, so only try to connect right after hearing one.
+        # HA skips advertisement callbacks when the data is the same as last time, and the knob's never changes,
+        # so poll the time HA last heard it instead
+        heard = 0.0
         while True:
-            await self._heard.wait()
-            self._heard.clear()
-            device = bluetooth.async_ble_device_from_address(self.hass, self.address, connectable=True)
-            if device:
+            await asyncio.sleep(POLL_INTERVAL)
+            info = bluetooth.async_last_service_info(self.hass, self.address, connectable=True)
+            if info and info.time > heard:
+                heard = info.time
                 gone = asyncio.Event()
                 client = None
                 try:
                     client = await establish_connection(
-                        BleakClientWithServiceCache, device, self.address, disconnected_callback=lambda _: gone.set()
+                        BleakClientWithServiceCache, info.device, self.address, disconnected_callback=lambda _: gone.set()
                     )
                     await client.start_notify(UUID_READ, self._on_notify)
                     self.client = client
@@ -107,24 +106,18 @@ class PowerMate:
                     _LOGGER.info("PowerMate %s disconnected", self.address)
                 except (BleakError, asyncio.TimeoutError) as err:
                     _LOGGER.debug("PowerMate %s: %s", self.address, err)
+                except Exception:  # keep the loop alive, or the knob never reconnects
+                    _LOGGER.exception("PowerMate %s: unexpected error", self.address)
                 finally:
                     self.client = None
                     if client and client.is_connected:
-                        await client.disconnect()
-            await asyncio.sleep(1)
+                        with contextlib.suppress(BleakError, asyncio.TimeoutError):
+                            await client.disconnect()
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.runtime_data = pm = PowerMate(hass, entry.data[CONF_ADDRESS], entry.title)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    entry.async_on_unload(
-        bluetooth.async_register_callback(
-            hass,
-            pm.on_advertisement,
-            bluetooth.BluetoothCallbackMatcher(address=pm.address, connectable=True),
-            bluetooth.BluetoothScanningMode.ACTIVE,
-        )
-    )
     entry.async_create_background_task(hass, pm.run(), DOMAIN)
     return True
 
