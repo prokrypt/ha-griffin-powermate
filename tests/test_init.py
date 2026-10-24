@@ -8,13 +8,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from bleak.exc import BleakError
 from homeassistant.components.bluetooth import async_get_advertisement_callback
 from homeassistant.const import CONF_ADDRESS
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers import entity_registry as er
 from homeassistant.setup import async_setup_component
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry, async_capture_events
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_capture_events,
+    mock_restore_cache_with_extra_data,
+)
 
-from custom_components.griffin_powermate.const import DOMAIN, EVENT, UUID_LED, UUID_READ
+from custom_components.griffin_powermate.const import DOMAIN, EVENT, UUID_BATTERY, UUID_LED, UUID_READ
 
 from .conftest import ADDRESS, service_info
 
@@ -58,6 +62,17 @@ async def advertise(hass: HomeAssistant, **kwargs) -> None:
     await hass.async_block_till_done()
 
 
+def notified(client: MagicMock, uuid: str):
+    """The callback the integration subscribed to `uuid` with."""
+    [callback] = [c.args[1] for c in client.start_notify.await_args_list if c.args[0] == uuid]
+    return callback
+
+
+def battery_state(hass: HomeAssistant) -> str:
+    entity_id = er.async_get(hass).async_get_entity_id("sensor", DOMAIN, f"{ADDRESS}_battery")
+    return hass.states.get(entity_id).state
+
+
 async def setup(hass: HomeAssistant, entry: MockConfigEntry) -> None:
     assert await async_setup_component(hass, "bluetooth", {})
     assert await hass.config_entries.async_setup(entry.entry_id)
@@ -82,11 +97,9 @@ async def test_connects_when_the_knob_advertises(hass: HomeAssistant, entry, cli
         await settle()
         connect.assert_awaited_once()
         assert connect.await_args.args[2] == ADDRESS
-        client.start_notify.assert_awaited_once()
-        assert client.start_notify.await_args.args[0] == UUID_READ
+        assert [c.args[0] for c in client.start_notify.await_args_list] == [UUID_READ, UUID_BATTERY]
         client.write_gatt_char.assert_awaited_once_with(UUID_LED, bytes([0x80]), response=True)
-        battery = er.async_get(hass).async_get_entity_id("sensor", DOMAIN, f"{ADDRESS}_battery")
-        assert hass.states.get(battery).state == "87"
+        assert battery_state(hass) == "87"
 
         assert await hass.config_entries.async_unload(entry.entry_id)
 
@@ -109,7 +122,7 @@ async def test_knob_actions_fire_events(hass: HomeAssistant, entry, client) -> N
         await setup(hass, entry)
         await advertise(hass)
         await settle()
-        notify = client.start_notify.await_args.args[1]
+        notify = notified(client, UUID_READ)
         notify(None, bytearray())  # empty notification is ignored
         notify(None, bytearray([0x68]))
         await hass.async_block_till_done()
@@ -146,6 +159,60 @@ async def test_unexpected_error_does_not_stop_reconnecting(hass: HomeAssistant, 
         await advertise(hass)
         await settle()
         assert connect.await_count == 2
-        client.start_notify.assert_awaited_once()
+        assert client.start_notify.await_count == 2  # knob events + battery, once
+
+        assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_battery_from_notifications_when_reads_fail(hass: HomeAssistant, entry, client, caplog) -> None:
+    """The knob may not allow reads of the level; powuhmate only ever got it from notifications."""
+    client.read_gatt_char.side_effect = BleakError("read not permitted")
+    with patch(CONNECT, AsyncMock(return_value=client)):
+        await setup(hass, entry)
+        await advertise(hass)
+        await settle()
+        assert battery_state(hass) == "unknown"
+
+        notified(client, UUID_BATTERY)(None, bytearray([64]))
+        await hass.async_block_till_done()
+        assert battery_state(hass) == "64"
+        assert "battery level unavailable" not in caplog.text  # notifications may still deliver it
+
+        assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_battery_failure_is_logged_once(hass: HomeAssistant, entry, client, caplog) -> None:
+    client.read_gatt_char.side_effect = BleakError("read not permitted")
+    client.start_notify.side_effect = lambda uuid, _cb: _raise(BleakError("no notify")) if uuid == UUID_BATTERY else None
+    with patch(CONNECT, AsyncMock(return_value=client)) as connect:
+        await setup(hass, entry)
+        await advertise(hass)
+        await settle()
+        client.is_connected = False
+        connect.await_args.kwargs["disconnected_callback"](client)
+        await advertise(hass)
+        await settle()
+        assert connect.await_count == 2
+        assert caplog.text.count("battery level unavailable") == 1
+
+        assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+def _raise(err: Exception):
+    raise err
+
+
+async def test_battery_restored_until_the_knob_reports(hass: HomeAssistant, entry, client) -> None:
+    entity_id = f"sensor.powermate_bluetooth_{ADDRESS.lower().replace(':', '_')}_battery"
+    mock_restore_cache_with_extra_data(
+        hass, [(State(entity_id, "55"), {"native_value": 55, "native_unit_of_measurement": "%"})]
+    )
+    with patch(CONNECT, AsyncMock(return_value=client)):
+        await setup(hass, entry)
+        assert battery_state(hass) == "55"
+
+        await advertise(hass)
+        await settle()
+        assert battery_state(hass) == "87"
 
         assert await hass.config_entries.async_unload(entry.entry_id)
