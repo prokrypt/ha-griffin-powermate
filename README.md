@@ -18,7 +18,7 @@ Import the blueprint, create an automation from it, pick your PowerMate, and set
 ## Entities
 - `event.<name>_knob`: last gesture in `event_type`, click count in `steps`.
 - `light.<name>_led`: on/off, brightness, effects `blink_1`…`blink_4`. State is restored and re-sent each time the knob reconnects. Drive it from the blueprint actions, e.g. turn it on while the volume changes.
-- `sensor.<name>_battery`: from the knob's battery notifications, plus a read on connect and every 10 min where the knob allows it. Keeps the last level across restarts.
+- `sensor.<name>_battery`: the knob's level, sent on its own notify-only characteristic (it has no standard battery service); refreshed on connect and every 10 min. Keeps the last level across restarts.
 
 ## Raw events
 Each knob action also fires a `griffin_powermate_event` with `address`, `action` and `steps`:
