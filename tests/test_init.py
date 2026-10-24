@@ -51,8 +51,8 @@ def entry(hass: HomeAssistant) -> MockConfigEntry:
 def client() -> MagicMock:
     client = MagicMock(is_connected=True)
     client.start_notify = AsyncMock()
+    client.stop_notify = AsyncMock()
     client.write_gatt_char = AsyncMock()
-    client.read_gatt_char = AsyncMock(return_value=bytearray([87]))
     client.disconnect = AsyncMock()
     return client
 
@@ -99,6 +99,8 @@ async def test_connects_when_the_knob_advertises(hass: HomeAssistant, entry, cli
         assert connect.await_args.args[2] == ADDRESS
         assert [c.args[0] for c in client.start_notify.await_args_list] == [UUID_READ, UUID_BATTERY]
         client.write_gatt_char.assert_awaited_once_with(UUID_LED, bytes([0x80]), response=True)
+        notified(client, UUID_BATTERY)(None, bytearray([87]))
+        await hass.async_block_till_done()
         assert battery_state(hass) == "87"
 
         assert await hass.config_entries.async_unload(entry.entry_id)
@@ -110,7 +112,7 @@ async def test_led_write_error_keeps_the_connection(hass: HomeAssistant, entry, 
         await setup(hass, entry)
         await advertise(hass)
         await settle()
-        client.read_gatt_char.assert_awaited_once()  # got past the LED write
+        notified(client, UUID_BATTERY)  # got past the LED write
         client.disconnect.assert_not_called()
 
         assert await hass.config_entries.async_unload(entry.entry_id)
@@ -164,27 +166,33 @@ async def test_unexpected_error_does_not_stop_reconnecting(hass: HomeAssistant, 
         assert await hass.config_entries.async_unload(entry.entry_id)
 
 
-async def test_battery_from_notifications_when_reads_fail(hass: HomeAssistant, entry, client, caplog) -> None:
-    """The knob may not allow reads of the level; powuhmate only ever got it from notifications."""
-    client.read_gatt_char.side_effect = BleakError("read not permitted")
-    with patch(CONNECT, AsyncMock(return_value=client)):
+async def test_battery_is_refreshed_by_resubscribing(hass: HomeAssistant, entry, client) -> None:
+    """The level is notify-only and the knob sends it once per subscribe (powuhmate re-subscribed every 600s)."""
+    with (
+        patch("custom_components.griffin_powermate.BATTERY_INTERVAL", 0.03),
+        patch(CONNECT, AsyncMock(return_value=client)),
+    ):
         await setup(hass, entry)
         await advertise(hass)
         await settle()
-        assert battery_state(hass) == "unknown"
+        client.read_gatt_char.assert_not_called()
+        battery_subscribes = [c for c in client.start_notify.await_args_list if c.args[0] == UUID_BATTERY]
+        assert len(battery_subscribes) >= 2
+        client.stop_notify.assert_awaited_with(UUID_BATTERY)
 
-        notified(client, UUID_BATTERY)(None, bytearray([64]))
+        battery_subscribes[-1].args[1](None, bytearray([64]))
         await hass.async_block_till_done()
         assert battery_state(hass) == "64"
-        assert "battery level unavailable" not in caplog.text  # notifications may still deliver it
 
         assert await hass.config_entries.async_unload(entry.entry_id)
 
 
 async def test_battery_failure_is_logged_once(hass: HomeAssistant, entry, client, caplog) -> None:
-    client.read_gatt_char.side_effect = BleakError("read not permitted")
-    client.start_notify.side_effect = lambda uuid, _cb: _raise(BleakError("no notify")) if uuid == UUID_BATTERY else None
-    with patch(CONNECT, AsyncMock(return_value=client)) as connect:
+    client.start_notify.side_effect = lambda uuid, _cb: _raise(BleakError("not found")) if uuid == UUID_BATTERY else None
+    with (
+        patch("custom_components.griffin_powermate.BATTERY_INTERVAL", 0.03),
+        patch(CONNECT, AsyncMock(return_value=client)) as connect,
+    ):
         await setup(hass, entry)
         await advertise(hass)
         await settle()
@@ -213,6 +221,9 @@ async def test_battery_restored_until_the_knob_reports(hass: HomeAssistant, entr
 
         await advertise(hass)
         await settle()
+        assert battery_state(hass) == "55"  # until the knob sends its level
+        notified(client, UUID_BATTERY)(None, bytearray([87]))
+        await hass.async_block_till_done()
         assert battery_state(hass) == "87"
 
         assert await hass.config_entries.async_unload(entry.entry_id)

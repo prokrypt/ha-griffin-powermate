@@ -91,24 +91,18 @@ class PowerMate:
         if data:
             self._set_battery(data[0])
 
-    async def _notify_battery(self) -> bool:
-        # powuhmate got the level from notifications only; the knob may not allow reads
+    async def _refresh_battery(self, resubscribe: bool) -> None:
+        # the level can't be read; the knob sends it once per subscribe, so re-subscribe to refresh (as powuhmate did)
         try:
+            if resubscribe:
+                await self.client.stop_notify(UUID_BATTERY)
             await self.client.start_notify(UUID_BATTERY, self._on_battery)
         except BleakError as err:
-            _LOGGER.debug("PowerMate %s battery notifications failed: %s", self.address, err)
-            return False
-        return True
-
-    async def _read_battery(self, notifying: bool) -> None:
-        try:
-            self._set_battery((await self.client.read_gatt_char(UUID_BATTERY))[0])
-        except BleakError as err:
-            if notifying or self._battery_warned:
-                _LOGGER.debug("PowerMate %s battery read failed: %s", self.address, err)
+            if self._battery_warned:
+                _LOGGER.debug("PowerMate %s battery notifications failed: %s", self.address, err)
             else:
                 self._battery_warned = True
-                _LOGGER.warning("PowerMate %s: battery level unavailable, read failed: %s", self.address, err)
+                _LOGGER.warning("PowerMate %s: battery level unavailable: %s", self.address, err)
 
     async def run(self) -> None:
         # an idle knob advertises in short bursts minutes apart, so only try to connect right after hearing one.
@@ -129,10 +123,11 @@ class PowerMate:
                     await client.start_notify(UUID_READ, self._on_notify)
                     self.client = client
                     await self.set_led(self.led)  # knob forgets its LED across reconnects
-                    notifying = await self._notify_battery()
                     _LOGGER.info("PowerMate %s connected", self.address)
+                    resubscribe = False
                     while not gone.is_set():
-                        await self._read_battery(notifying)
+                        await self._refresh_battery(resubscribe)
+                        resubscribe = True
                         with contextlib.suppress(asyncio.TimeoutError):
                             await asyncio.wait_for(gone.wait(), BATTERY_INTERVAL)
                     _LOGGER.info("PowerMate %s disconnected", self.address)

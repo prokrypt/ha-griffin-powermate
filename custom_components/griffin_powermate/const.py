@@ -43,8 +43,8 @@ TURNS = (0x67, 0x68, 0x69, 0x70)
 TURN_GAP = 0.2
 TURN_MAX_WAIT = 0.5
 
-UUID_BATTERY = "00002a19-0000-1000-8000-00805f9b34fb"
-BATTERY_INTERVAL = 600  # seconds between battery reads while connected
+UUID_BATTERY = "50f09cc9-fe1d-4c79-a962-b3a7cd3e5584"  # notify only; the knob has no 0x2A19
+BATTERY_INTERVAL = 600  # seconds between battery refreshes while connected
 
 # LED byte: 80 off, A1..BF dim..bright, C0..FF blink at different speeds
 LED_OFF = 0x80
