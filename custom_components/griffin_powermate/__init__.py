@@ -48,6 +48,7 @@ class PowerMate:
         self.client = None
         self.led = LED_OFF
         self.battery = None
+        self._battery_warned = False
         self._last = (None, 0.0)
         self._press_turn = float("-inf")
         self._turns = TurnGrouper(hass.loop, TURN_GAP, TURN_MAX_WAIT, self._fire)
@@ -82,13 +83,32 @@ class PowerMate:
         if action in ACTIONS.values():
             async_dispatcher_send(self.hass, f"{self.signal}_action", action, steps)
 
-    async def _read_battery(self) -> None:
-        try:
-            self.battery = (await self.client.read_gatt_char(UUID_BATTERY))[0]
-        except BleakError as err:
-            _LOGGER.debug("PowerMate %s battery read failed: %s", self.address, err)
-            return
+    def _set_battery(self, level: int) -> None:
+        self.battery = level
         async_dispatcher_send(self.hass, f"{self.signal}_update")
+
+    def _on_battery(self, _char, data: bytearray) -> None:
+        if data:
+            self._set_battery(data[0])
+
+    async def _notify_battery(self) -> bool:
+        # powuhmate got the level from notifications only; the knob may not allow reads
+        try:
+            await self.client.start_notify(UUID_BATTERY, self._on_battery)
+        except BleakError as err:
+            _LOGGER.debug("PowerMate %s battery notifications failed: %s", self.address, err)
+            return False
+        return True
+
+    async def _read_battery(self, notifying: bool) -> None:
+        try:
+            self._set_battery((await self.client.read_gatt_char(UUID_BATTERY))[0])
+        except BleakError as err:
+            if notifying or self._battery_warned:
+                _LOGGER.debug("PowerMate %s battery read failed: %s", self.address, err)
+            else:
+                self._battery_warned = True
+                _LOGGER.warning("PowerMate %s: battery level unavailable, read failed: %s", self.address, err)
 
     async def run(self) -> None:
         # an idle knob advertises in short bursts minutes apart, so only try to connect right after hearing one.
@@ -109,9 +129,10 @@ class PowerMate:
                     await client.start_notify(UUID_READ, self._on_notify)
                     self.client = client
                     await self.set_led(self.led)  # knob forgets its LED across reconnects
+                    notifying = await self._notify_battery()
                     _LOGGER.info("PowerMate %s connected", self.address)
                     while not gone.is_set():
-                        await self._read_battery()
+                        await self._read_battery(notifying)
                         with contextlib.suppress(asyncio.TimeoutError):
                             await asyncio.wait_for(gone.wait(), BATTERY_INTERVAL)
                     _LOGGER.info("PowerMate %s disconnected", self.address)
